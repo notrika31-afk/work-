@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WorkTracker Pro - אליה</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyAigG55BrNJbayFig5d9lg5MLTSaHqQkZU",
+          authDomain: "worktracker-elia.firebaseapp.com",
+          projectId: "worktracker-elia",
+          storageBucket: "worktracker-elia.firebasestorage.app",
+          messagingSenderId: "792455309636",
+          appId: "1:792455309636:web:710779055ea0514735cf11",
+          measurementId: "G-XD8LSNR7XM"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app);
+    </script>
+
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background-color: #f1f5f9; }
+        .view { display: none; }
+        .view.active { display: block; }
+        input[type="time"] { direction: ltr; text-align: left; }
+        .input-field { @apply w-full border-2 border-slate-100 rounded-2xl px-4 pt-6 pb-2 bg-slate-50 focus:bg-white focus:border-blue-400 outline-none transition-all font-bold text-slate-700; }
+        .label-style { @apply text-[10px] font-bold text-slate-400 absolute right-3 top-2 uppercase z-10; }
+        nav button.active { @apply text-blue-600 opacity-100; }
+    </style>
+</head>
+<body class="pb-24">
+
+    <header class="p-4 bg-white border-b sticky top-0 z-40 flex justify-between items-center shadow-sm">
+        <h1 id="pageTitle" class="text-xl font-black text-slate-800 tracking-tighter">הוספת משמרת</h1>
+        <div class="bg-blue-600 text-white px-4 py-1 rounded-full font-black text-sm">
+            <span id="headerTotal">₪0</span>
+        </div>
+    </header>
+
+    <main class="p-4 max-w-md mx-auto">
+        
+        <section id="view-add" class="view active space-y-5">
+            <div id="formContainer" class="bg-white p-6 rounded-[2.5rem] shadow-xl space-y-4 border border-slate-50 relative">
+                <div class="relative">
+                    <label class="label-style">תאריך</label>
+                    <input type="date" id="shiftDate" class="input-field font-black">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="relative">
+                        <label class="label-style">כניסה (HH:mm)</label>
+                        <input type="time" id="startTime" class="input-field font-black">
+                    </div>
+                    <div class="relative">
+                        <label class="label-style">יציאה (HH:mm)</label>
+                        <input type="time" id="endTime" class="input-field font-black">
+                    </div>
+                </div>
+
+                <div class="relative">
+                    <label class="label-style text-orange-600 font-black tracking-widest uppercase italic">סיבוס (₪ מצטבר)</label>
+                    <input type="number" id="cibusInput" placeholder="0" class="input-field border-orange-50 bg-orange-50/20 focus:border-orange-400 text-orange-700">
+                </div>
+
+                <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    <button onclick="setTemplate('05:00', '13:00')" class="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap">☀️ בוקר (05-13)</button>
+                    <button onclick="setTemplate('13:00', '21:00')" class="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap">⛅ צהריים (13-21)</button>
+                    <button onclick="setTemplate('21:00', '05:00')" class="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[10px] font-black whitespace-nowrap">🌙 לילה (21-05)</button>
+                </div>
+
+                <button id="saveBtn" onclick="handleSave()" class="w-full bg-slate-900 text-white font-black py-5 rounded-3xl shadow-lg active:scale-95 transition-all text-xl mt-2">
+                    שמור בענן ☁️
+                </button>
+            </div>
+
+            <div class="bg-orange-500 p-5 rounded-3xl shadow-lg text-white flex justify-between items-center">
+                <div>
+                    <p class="text-[10px] font-bold opacity-80 uppercase tracking-widest">יתרת סיבוס החודש</p>
+                    <h2 id="totalCibusAdd" class="text-3xl font-black italic tracking-tighter">₪0</h2>
+                </div>
+                <div class="text-4xl opacity-30 italic font-black">CIBUS</div>
+            </div>
+        </section>
+
+        <section id="view-history" class="view space-y-4">
+            <div class="flex justify-between items-center bg-white p-4 rounded-3xl shadow-sm border border-slate-100">
+                <button onclick="changeMonth(-1)" class="p-2 bg-slate-50 rounded-full w-10 h-10 flex items-center justify-center">◀</button>
+                <span id="currentViewLabel" class="font-black text-slate-700 text-lg"></span>
+                <button onclick="changeMonth(1)" class="p-2 bg-slate-50 rounded-full w-10 h-10 flex items-center justify-center">▶</button>
+            </div>
+
+            <div id="shiftsList" class="space-y-3 min-h-[400px]">
+                </div>
+            
+            <button onclick="shareSummary()" class="w-full py-4 bg-green-600 text-white font-black rounded-3xl shadow-md flex items-center justify-center gap-2">
+                <span>שלח סיכום חודשי</span> 📱
+            </button>
+        </section>
+
+        <section id="view-settings" class="view space-y-4 text-center">
+            <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border space-y-5 text-right">
+                <h2 class="font-black text-slate-800 text-lg border-b pb-2">הגדרות שכר (₪)</h2>
+                <div class="relative"><label class="label-style">בסיס</label><input type="number" id="rateBase" value="71.58" class="input-field"></div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="relative"><label class="label-style">125%</label><input type="number" id="rate125" value="89.48" class="input-field text-blue-600"></div>
+                    <div class="relative"><label class="label-style">150%</label><input type="number" id="rate150" value="107.37" class="input-field text-red-600"></div>
+                </div>
+            </div>
+            <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">מחובר לפרויקט: worktracker-elia</p>
+        </section>
+
+    </main>
+
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around p-3 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.05)] z-50">
+        <button onclick="showView('add')" id="nav-add" class="flex flex-col items-center gap-1 transition-all opacity-40 active">
+            <span class="text-2xl">➕</span><span class="text-[10px] font-black uppercase">הוספה</span>
+        </button>
+        <button onclick="showView('history')" id="nav-history" class="flex flex-col items-center gap-1 transition-all opacity-40">
+            <span class="text-2xl">📋</span><span class="text-[10px] font-black uppercase">היסטוריה</span>
+        </button>
+        <button onclick="showView('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all opacity-40">
+            <span class="text-2xl">⚙️</span><span class="text-[10px] font-black uppercase">הגדרות</span>
+        </button>
+    </nav>
+
+    <script type="module">
+        import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        let viewDate = new Date();
+
+        window.showView = (name) => {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+            document.getElementById('view-' + name).classList.add('active');
+            document.getElementById('nav-' + name).classList.add('active');
+            document.getElementById('pageTitle').innerText = name === 'add' ? 'הוספת משמרת' : name === 'history' ? 'היסטוריה' : 'הגדרות';
+            if (name === 'history') render();
+            window.scrollTo(0,0);
+        };
+
+        window.setTemplate = (s, e) => {
+            document.getElementById('startTime').value = s;
+            document.getElementById('endTime').value = e;
+        };
+
+        window.handleSave = async () => {
+            const btn = document.getElementById('saveBtn');
+            const date = document.getElementById('shiftDate').value;
+            const start = document.getElementById('startTime').value;
+            const end = document.getElementById('endTime').value;
+            const cibus = parseFloat(document.getElementById('cibusInput').value) || 0;
+
+            if (!date || !start || !end) return alert("אח שלי, תזין תאריך ושעות!");
+
+            btn.disabled = true;
+            btn.innerText = "שומר...";
+
+            const rb = parseFloat(document.getElementById('rateBase').value);
+            const r125 = parseFloat(document.getElementById('rate125').value);
+            const r150 = parseFloat(document.getElementById('rate150').value);
+
+            let sMin = timeToMin(start), eMin = timeToMin(end);
+            if (eMin < sMin) eMin += 1440;
+            const h = (eMin - sMin) / 60;
+            const salary = calcSalary(h, rb, r125, r150);
+
+            try {
+                await addDoc(collection(window.db, "shifts"), {
+                    date, start, end, h, salary, cibus, timestamp: Date.now()
+                });
+                document.getElementById('cibusInput').value = '';
+                showView('history');
+            } catch (e) {
+                alert("שגיאה בשמירה לענן: " + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "שמור בענן ☁️";
+            }
+        };
+
+        window.render = async () => {
+            const list = document.getElementById('shiftsList');
+            const monthStr = viewDate.toISOString().substring(0, 7);
+            document.getElementById('currentViewLabel').innerText = viewDate.toLocaleString('he-IL', { month: 'long', year: 'numeric' });
+            list.innerHTML = '<div class="text-center py-20 text-slate-400 animate-pulse font-black uppercase">טוען מהענן...</div>';
+
+            try {
+                const q = query(collection(window.db, "shifts"), orderBy("date", "desc"));
+                const snap = await getDocs(q);
+                let tS = 0, tC = 0;
+                list.innerHTML = '';
+
+                snap.forEach((docSnap) => {
+                    const s = docSnap.data();
+                    if (s.date.startsWith(monthStr)) {
+                        tS += s.salary; tC += s.cibus;
+                        const d = document.createElement('div');
+                        d.className = "bg-white p-5 rounded-[2rem] shadow-sm flex justify-between items-center border border-slate-50";
+                        d.innerHTML = `
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="font-black text-slate-800 text-lg">${s.date.split('-').reverse().join('.')}</span>
+                                    ${s.cibus > 0 ? '<span class="bg-orange-100 text-orange-600 text-[9px] px-2 py-0.5 rounded-full font-bold">💳 ₪' + Math.round(s.cibus) + '</span>' : ''}
+                                </div>
+                                <div class="text-[11px] text-slate-400 font-bold uppercase">${s.start}-${s.end} | ${s.h.toFixed(1)} ש'</div>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <div class="text-left font-black text-slate-700">₪${Math.round(s.salary)}</div>
+                                <button onclick="window.delShift('${docSnap.id}')" class="text-red-300 p-2">🗑️</button>
+                            </div>`;
+                        list.appendChild(d);
+                    }
+                });
+                document.getElementById('headerTotal').innerText = `₪${Math.round(tS).toLocaleString()}`;
+                document.getElementById('totalCibusAdd').innerText = `₪${Math.round(tC).toLocaleString()}`;
+            } catch (e) { list.innerHTML = "שגיאה בטעינה: " + e.message; }
+        };
+
+        window.delShift = async (id) => {
+            if (confirm('למחוק לצמיתות מהענן?')) {
+                await deleteDoc(doc(window.db, "shifts", id));
+                render();
+            }
+        };
+
+        function calcSalary(h, rb, r125, r150) {
+            if (h <= 8.6) return h * rb;
+            if (h <= 10.6) return (8.6 * rb) + ((h - 8.6) * r125);
+            return (8.6 * rb) + (2 * r125) + ((h - 10.6) * r150);
+        }
+
+        function timeToMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
+        window.changeMonth = (d) => { viewDate.setMonth(viewDate.getMonth() + d); render(); };
+        document.getElementById('shiftDate').valueAsDate = new Date();
+    </script>
+</body>
+</html>
